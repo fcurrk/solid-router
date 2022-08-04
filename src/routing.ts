@@ -443,7 +443,8 @@ export function createRouterContext(
       if (a.hasAttribute("download") || (rel && rel.includes("external"))) return;
 
       const url = svg ? new URL(href, document.baseURI) : new URL(href);
-      const pathname = urlDecode(url.pathname);
+      // const pathname = urlDecode(url.pathname);
+      const pathname = url.pathname;
       if (
         url.origin !== window.location.origin ||
         (basePath && pathname && !pathname.toLowerCase().startsWith(basePath.toLowerCase()))
