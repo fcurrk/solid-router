@@ -9,10 +9,10 @@ import {
   onCleanup,
   untrack,
   useContext,
-  useTransition,
+  startTransition,
   resetErrorBoundaries
 } from "solid-js";
-import { isServer } from "solid-js/web";
+import { isServer, delegateEvents } from "solid-js/web";
 import { normalizeIntegration } from "./integration";
 import type {
   Branch,
@@ -96,7 +96,7 @@ export const useSearchParams = <T extends Params>(): [
   const navigate = useNavigate();
   const setSearchParams = (params: SetParams, options?: Partial<NavigateOptions>) => {
     const searchString = untrack(() => mergeSearchString(location.search, params));
-    navigate(searchString, { scroll: false, ...options, resolve: true });
+    navigate(location.pathname + searchString, { scroll: false, ...options });
   };
   return [location.query as T, setSearchParams];
 };
@@ -280,7 +280,15 @@ export function createRouterContext(
     setSource({ value: basePath, replace: true, scroll: false });
   }
 
-  const [isRouting, start] = useTransition();
+  const [isRouting, setIsRouting] = createSignal(false);
+  const start = async (callback: () => void) => {
+    setIsRouting(true);
+    try {
+      await startTransition(callback);
+    } finally {
+      setIsRouting(false);
+    }
+  };
   const [reference, setReference] = createSignal(source().value);
   const [state, setState] = createSignal(source().state);
   const location = createLocation(reference, state);
@@ -410,10 +418,6 @@ export function createRouterContext(
   });
 
   if (!isServer) {
-    function isSvg<T extends SVGElement>(el: T | HTMLElement): el is T {
-      return el.namespaceURI === "http://www.w3.org/2000/svg";
-    }
-
     function handleAnchorClick(evt: MouseEvent) {
       if (
         evt.defaultPrevented ||
@@ -429,20 +433,17 @@ export function createRouterContext(
         .composedPath()
         .find(el => el instanceof Node && el.nodeName.toUpperCase() === "A") as
         | HTMLAnchorElement
-        | SVGAElement
         | undefined;
 
-      if (!a) return;
+      if (!a || !a.hasAttribute("link")) return;
 
-      const svg = isSvg(a);
-      const href = svg ? a.href.baseVal : a.href;
-      const target = svg ? a.target.baseVal : a.target;
-      if (target || (!href && !a.hasAttribute("state"))) return;
+      const href = a.href;
+      if (a.target || (!href && !a.hasAttribute("state"))) return;
 
       const rel = (a.getAttribute("rel") || "").split(/\s+/);
       if (a.hasAttribute("download") || (rel && rel.includes("external"))) return;
 
-      const url = svg ? new URL(href, document.baseURI) : new URL(href);
+      const url = new URL(href);
       // const pathname = urlDecode(url.pathname);
       const pathname = url.pathname;
       if (
@@ -463,6 +464,8 @@ export function createRouterContext(
       });
     }
 
+    // ensure delegated events run first
+    delegateEvents(["click"]);
     document.addEventListener("click", handleAnchorClick);
     onCleanup(() => document.removeEventListener("click", handleAnchorClick));
   }
